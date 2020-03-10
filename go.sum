@@ -63,6 +63,10 @@ github.com/blang/semver v3.5.0+incompatible/go.mod h1:kRBLl5iJ+tD4TcOOxsy/0fnweb
 github.com/buildpacks/imgutil v0.0.0-20200115144305-2289fbc194a6/go.mod h1:E3lXJcNXcRefJQAHW5rqboonet+jtOml4qImbJhYGAo=
 github.com/buildpacks/imgutil v0.0.0-20200306214512-4ab246377e0c h1:k8jaDipK1YVdG9/w8PyoZcFTeH1lp5s8M2LpXPruf0Q=
 github.com/buildpacks/imgutil v0.0.0-20200306214512-4ab246377e0c/go.mod h1:zL1k+TLfODdOtRrWOkF+44GE3O1EbauuLeIfNM531Qk=
+github.com/buildpacks/imgutil v0.0.0-20200310202705-b3e519b99068 h1:flIw65by40rsD4Gq3UKoQO6Yuil1wDq8qm0tzyFw8j8=
+github.com/buildpacks/imgutil v0.0.0-20200310202705-b3e519b99068/go.mod h1:zL1k+TLfODdOtRrWOkF+44GE3O1EbauuLeIfNM531Qk=
+github.com/buildpacks/imgutil v0.0.0-20200310202950-2c34c085d54c h1:VK+C5ubx+LC08AETHPC6C6XV4s9NTi7ylH9PibV7nFQ=
+github.com/buildpacks/imgutil v0.0.0-20200310202950-2c34c085d54c/go.mod h1:zL1k+TLfODdOtRrWOkF+44GE3O1EbauuLeIfNM531Qk=
 github.com/buildpacks/lifecycle v0.6.1 h1:MhBDBm8lRyTtjwfg0AVUSC5K+yBwWY/N64SDglpiAy4=
 github.com/buildpacks/lifecycle v0.6.1/go.mod h1:6QD+o2zODTKMFrm1GQBtM8TuLQ1ZQ6Wj9zLA1HU3rbI=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=

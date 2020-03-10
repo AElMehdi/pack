@@ -260,7 +260,7 @@ func testAcceptance(t *testing.T, when spec.G, it spec.S, packFixturesDir, packP
 			runImageMirror = value
 		})
 
-		when("creating a windows builder", func() {
+		when.Focus("creating a windows builder", func() {
 			windowsDaemon := true
 			it("succeeds", func() {
 				img := createBuilder(t,

@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/buildpacks/pack/internal/layer"
+
 	"github.com/BurntSushi/toml"
 	"github.com/buildpacks/imgutil"
 	"github.com/pkg/errors"
@@ -50,6 +52,7 @@ const (
 type Builder struct {
 	baseImageName        string
 	image                imgutil.Image
+	layerFactory         layer.Factory
 	lifecycle            Lifecycle
 	lifecycleDescriptor  LifecycleDescriptor
 	additionalBuildpacks []dist.Buildpack
@@ -87,6 +90,11 @@ func New(baseImage imgutil.Image, name string) (*Builder, error) {
 }
 
 func constructBuilder(img imgutil.Image, newName string, metadata Metadata) (*Builder, error) {
+	layerFactory, err := layer.NewFactory(img)
+	if err != nil {
+		return nil, err
+	}
+
 	uid, gid, err := userAndGroupIDs(img)
 	if err != nil {
 		return nil, err
@@ -133,6 +141,7 @@ func constructBuilder(img imgutil.Image, newName string, metadata Metadata) (*Bu
 	return &Builder{
 		baseImageName: baseName,
 		image:         img,
+		layerFactory:  layerFactory,
 		metadata:      metadata,
 		mixins:        mixins,
 		order:         order,
@@ -470,32 +479,32 @@ func (b *Builder) defaultDirsLayer(dest string) (string, error) {
 	}
 	defer fh.Close()
 
-	tw := tar.NewWriter(fh)
-	defer tw.Close()
+	lw := b.layerFactory.NewWriter(fh)
+	defer lw.Close()
 
 	ts := archive.NormalizedDateTime
 
-	if err := tw.WriteHeader(b.packOwnedDir(workspaceDir, ts)); err != nil {
+	if err := lw.WriteHeader(b.packOwnedDir(workspaceDir, ts)); err != nil {
 		return "", errors.Wrapf(err, "creating %s dir in layer", style.Symbol(workspaceDir))
 	}
 
-	if err := tw.WriteHeader(b.packOwnedDir(layersDir, ts)); err != nil {
+	if err := lw.WriteHeader(b.packOwnedDir(layersDir, ts)); err != nil {
 		return "", errors.Wrapf(err, "creating %s dir in layer", style.Symbol(layersDir))
 	}
 
-	if err := tw.WriteHeader(b.rootOwnedDir(cnbDir, ts)); err != nil {
+	if err := lw.WriteHeader(b.rootOwnedDir(cnbDir, ts)); err != nil {
 		return "", errors.Wrapf(err, "creating %s dir in layer", style.Symbol(cnbDir))
 	}
 
-	if err := tw.WriteHeader(b.rootOwnedDir(dist.BuildpacksDir, ts)); err != nil {
+	if err := lw.WriteHeader(b.rootOwnedDir(dist.BuildpacksDir, ts)); err != nil {
 		return "", errors.Wrapf(err, "creating %s dir in layer", style.Symbol(dist.BuildpacksDir))
 	}
 
-	if err := tw.WriteHeader(b.rootOwnedDir(platformDir, ts)); err != nil {
+	if err := lw.WriteHeader(b.rootOwnedDir(platformDir, ts)); err != nil {
 		return "", errors.Wrapf(err, "creating %s dir in layer", style.Symbol(platformDir))
 	}
 
-	if err := tw.WriteHeader(b.rootOwnedDir(platformDir+"/env", ts)); err != nil {
+	if err := lw.WriteHeader(b.rootOwnedDir(platformDir+"/env", ts)); err != nil {
 		return "", errors.Wrapf(err, "creating %s dir in layer", style.Symbol(platformDir+"/env"))
 	}
 
@@ -563,7 +572,7 @@ func (b *Builder) stackLayer(dest string) (string, error) {
 	return layerTar, nil
 }
 
-func (b *Builder) embedLifecycleTar(tw *tar.Writer) error {
+func (b *Builder) embedLifecycleTar(lw layer.Writer) error {
 	var regex = regexp.MustCompile(`^[^/]+/([^/]+)$`)
 
 	lr, err := b.lifecycle.Open()
@@ -586,7 +595,7 @@ func (b *Builder) embedLifecycleTar(tw *tar.Writer) error {
 			binaryName := pathMatches[1]
 
 			header.Name = lifecycleDir + "/" + binaryName
-			err = tw.WriteHeader(header)
+			err = lw.WriteHeader(header)
 			if err != nil {
 				return errors.Wrapf(err, "failed to write header for '%s'", header.Name)
 			}
@@ -596,7 +605,7 @@ func (b *Builder) embedLifecycleTar(tw *tar.Writer) error {
 				return errors.Wrapf(err, "failed to read contents of '%s'", header.Name)
 			}
 
-			_, err = tw.Write(buf)
+			_, err = lw.Write(buf)
 			if err != nil {
 				return errors.Wrapf(err, "failed to write contents to '%s'", header.Name)
 			}
@@ -613,11 +622,11 @@ func (b *Builder) envLayer(dest string, env map[string]string) (string, error) {
 	}
 	defer fh.Close()
 
-	tw := tar.NewWriter(fh)
-	defer tw.Close()
+	lw := b.layerFactory.NewWriter(fh)
+	defer lw.Close()
 
 	for k, v := range env {
-		if err := tw.WriteHeader(&tar.Header{
+		if err := lw.WriteHeader(&tar.Header{
 			Name:    path.Join(platformDir, "env", k),
 			Size:    int64(len(v)),
 			Mode:    0644,
@@ -625,7 +634,7 @@ func (b *Builder) envLayer(dest string, env map[string]string) (string, error) {
 		}); err != nil {
 			return "", err
 		}
-		if _, err := tw.Write([]byte(v)); err != nil {
+		if _, err := lw.Write([]byte(v)); err != nil {
 			return "", err
 		}
 	}
@@ -640,10 +649,10 @@ func (b *Builder) lifecycleLayer(dest string) (string, error) {
 	}
 	defer fh.Close()
 
-	tw := tar.NewWriter(fh)
-	defer tw.Close()
+	lw := b.layerFactory.NewWriter(fh)
+	defer lw.Close()
 
-	if err := tw.WriteHeader(&tar.Header{
+	if err := lw.WriteHeader(&tar.Header{
 		Typeflag: tar.TypeDir,
 		Name:     lifecycleDir,
 		Mode:     0755,
@@ -652,12 +661,12 @@ func (b *Builder) lifecycleLayer(dest string) (string, error) {
 		return "", err
 	}
 
-	err = b.embedLifecycleTar(tw)
+	err = b.embedLifecycleTar(lw)
 	if err != nil {
 		return "", errors.Wrap(err, "embedding lifecycle tar")
 	}
 
-	if err := tw.WriteHeader(&tar.Header{
+	if err := lw.WriteHeader(&tar.Header{
 		Name:     compatLifecycleDir,
 		Linkname: lifecycleDir,
 		Typeflag: tar.TypeSymlink,
