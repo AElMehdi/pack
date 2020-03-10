@@ -5,7 +5,7 @@ require (
 	github.com/Masterminds/semver v1.5.0
 	github.com/Microsoft/hcsshim v0.8.7 // indirect
 	github.com/apex/log v1.1.2
-	github.com/buildpacks/imgutil v0.0.0-20200203165119-4b0611f06e49
+	github.com/buildpacks/imgutil v0.0.0-20200306214512-4ab246377e0c
 	github.com/buildpacks/lifecycle v0.6.1
 	github.com/containerd/containerd v1.3.3 // indirect
 	github.com/containerd/continuity v0.0.0-20200107194136-26c1120b8d41 // indirect

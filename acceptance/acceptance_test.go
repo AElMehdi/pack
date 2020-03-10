@@ -260,6 +260,20 @@ func testAcceptance(t *testing.T, when spec.G, it spec.S, packFixturesDir, packP
 			runImageMirror = value
 		})
 
+		when("creating a windows builder", func() {
+			windowsDaemon := true
+			it("succeeds", func() {
+				img := createBuilder(t,
+					runImageMirror,
+					configDir,
+					packCreateBuilderPath,
+					lifecyclePath,
+					lifecycleDescriptor,
+					windowsDaemon)
+				h.DockerRmi(dockerCli, img)
+			})
+		})
+
 		when("builder is created", func() {
 			var (
 				builderName string
@@ -268,7 +282,7 @@ func testAcceptance(t *testing.T, when spec.G, it spec.S, packFixturesDir, packP
 			it.Before(func() {
 				key := taskKey("create-builder", runImageMirror, configDir, packCreateBuilderPath, lifecyclePath)
 				value, err := suiteManager.RunTaskOnceString(key, func() (string, error) {
-					return createBuilder(t, runImageMirror, configDir, packCreateBuilderPath, lifecyclePath, lifecycleDescriptor), nil
+					return createBuilder(t, runImageMirror, configDir, packCreateBuilderPath, lifecyclePath, lifecycleDescriptor, false), nil
 				})
 				h.AssertNil(t, err)
 				suiteManager.RegisterCleanUp("clean-"+key, func() error {
@@ -1476,7 +1490,7 @@ func buildPack(t *testing.T, compileVersion string) string {
 	return packPath
 }
 
-func createBuilder(t *testing.T, runImageMirror, configDir, packPath, lifecyclePath string, lifecycleDescriptor builder.LifecycleDescriptor) string {
+func createBuilder(t *testing.T, runImageMirror, configDir, packPath, lifecyclePath string, lifecycleDescriptor builder.LifecycleDescriptor, windowsDaemon bool) string {
 	t.Log("creating builder image...")
 
 	// CREATE TEMP WORKING DIR
@@ -1507,16 +1521,20 @@ func createBuilder(t *testing.T, runImageMirror, configDir, packPath, lifecycleP
 	h.AssertNil(t, err)
 	defer builderConfigFile.Close()
 
-	// CREATE PACKAGE
-	packageImageName = packageBuildpack(t,
-		filepath.Join(configDir, "package.toml"),
-		packPath,
-		lifecycleDescriptor,
-		"test/package",
-		[]string{"simple-layers-buildpack"},
-	)
+	var packageImageName string
+	var packageId string
+	if !windowsDaemon {
+		// CREATE PACKAGE
+		packageImageName = packageBuildpack(t,
+			filepath.Join(configDir, "package.toml"),
+			packPath,
+			lifecycleDescriptor,
+			"test/package",
+			[]string{"simple-layers-buildpack"},
+		)
 
-	packageId = "simple/layers"
+		packageId = "simple/layers"
+	}
 
 	// ADD lifecycle
 	var lifecycleURI string
@@ -1532,10 +1550,10 @@ func createBuilder(t *testing.T, runImageMirror, configDir, packPath, lifecycleP
 	// RENDER builder.toml
 	cfgData := fillTemplate(t, filepath.Join(configDir, "builder.toml"), map[string]interface{}{
 		"package_image_name": packageImageName,
-		"package_id": packageId,
-		"run_image_mirror": runImageMirror,
-		"lifecycle_uri": lifecycleURI,
-		"lifecycle_version": lifecycleVersion,
+		"package_id":         packageId,
+		"run_image_mirror":   runImageMirror,
+		"lifecycle_uri":      lifecycleURI,
+		"lifecycle_version":  lifecycleVersion,
 	})
 
 	err = ioutil.WriteFile(filepath.Join(tmpDir, "builder.toml"), []byte(cfgData), os.ModePerm)
@@ -1600,10 +1618,16 @@ func createStack(t *testing.T, dockerCli client.CommonAPIClient, runImageMirror 
 	t.Helper()
 	t.Log("creating stack images...")
 
-	if err := createStackImage(dockerCli, runImage, filepath.Join("testdata", "mock_stack", "run")); err != nil {
+	daemonInfo, err := dockerCli.Info(context.TODO())
+	h.AssertNil(t, err)
+
+	os := daemonInfo.OSType
+	stackBaseDir := filepath.Join("testdata", "mock_stack", os)
+
+	if err := createStackImage(dockerCli, runImage, filepath.Join(stackBaseDir, "run")); err != nil {
 		return err
 	}
-	if err := createStackImage(dockerCli, buildImage, filepath.Join("testdata", "mock_stack", "build")); err != nil {
+	if err := createStackImage(dockerCli, buildImage, filepath.Join(stackBaseDir, "build")); err != nil {
 		return err
 	}
 

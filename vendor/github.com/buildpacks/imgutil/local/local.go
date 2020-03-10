@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/docker/docker/pkg/jsonmessage"
+
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
@@ -74,7 +76,11 @@ func FromBaseImage(imageName string) ImageOption {
 }
 
 func NewImage(repoName string, dockerClient client.CommonAPIClient, ops ...ImageOption) (imgutil.Image, error) {
-	inspect := defaultInspect()
+	var err error
+	inspect, err := defaultInspect(dockerClient)
+	if err != nil {
+		return nil, err
+	}
 
 	image := &Image{
 		docker:     dockerClient,
@@ -83,7 +89,6 @@ func NewImage(repoName string, dockerClient client.CommonAPIClient, ops ...Image
 		layerPaths: make([]string, len(inspect.RootFS.Layers)),
 	}
 
-	var err error
 	for _, v := range ops {
 		image, err = v(image)
 		if err != nil {
@@ -107,6 +112,14 @@ func (i *Image) Env(key string) (string, error) {
 		}
 	}
 	return "", nil
+}
+
+func (i *Image) OS() (string, error) {
+	return i.inspect.Os, nil
+}
+
+func (i *Image) Architecture() (string, error) {
+	return i.inspect.Architecture, nil
 }
 
 func (i *Image) Rename(name string) {
@@ -351,7 +364,19 @@ func (i *Image) doSave() (types.ImageInspect, error) {
 			return
 		}
 		defer res.Body.Close()
-		io.Copy(ioutil.Discard, res.Body)
+
+		decoder := json.NewDecoder(res.Body)
+		var jsonMessage jsonmessage.JSONMessage
+		err = decoder.Decode(&jsonMessage)
+		if err != nil {
+			done <- errors.Wrapf(err, "parsing response")
+			return
+		}
+
+		if jsonMessage.Error != nil && !strings.HasPrefix(jsonMessage.Error.Message, "invalid tag") {
+			done <- errors.Wrap(jsonMessage.Error, "response error")
+			return
+		}
 
 		done <- nil
 	}()
@@ -407,6 +432,9 @@ func (i *Image) doSave() (types.ImageInspect, error) {
 	tw.Close()
 	pw.Close()
 	err = <-done
+	if err != nil {
+		return types.ImageInspect{}, errors.Wrapf(err, "image load '%s'", i.repoName)
+	}
 
 	i.requestGroup.Forget(i.repoName)
 
@@ -598,7 +626,7 @@ func inspectOptionalImage(docker client.CommonAPIClient, imageName string) (type
 
 	if inspect, _, err = docker.ImageInspectWithRaw(context.Background(), imageName); err != nil {
 		if client.IsErrNotFound(err) {
-			return defaultInspect(), nil
+			return defaultInspect(docker)
 		}
 
 		return types.ImageInspect{}, errors.Wrapf(err, "verifying image '%s'", imageName)
@@ -607,12 +635,18 @@ func inspectOptionalImage(docker client.CommonAPIClient, imageName string) (type
 	return inspect, nil
 }
 
-func defaultInspect() types.ImageInspect {
+func defaultInspect(docker client.CommonAPIClient) (types.ImageInspect, error) {
+	daemonInfo, err := docker.Info(context.Background())
+	if err != nil {
+		return types.ImageInspect{}, err
+	}
+
 	return types.ImageInspect{
-		Os:           "linux",
+		Os:           daemonInfo.OSType,
+		OsVersion:    daemonInfo.OSVersion,
 		Architecture: "amd64",
 		Config:       &container.Config{},
-	}
+	}, nil
 }
 
 func v1Config(inspect types.ImageInspect) (v1.ConfigFile, error) {
